@@ -21,10 +21,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .activity-card p { margin: 4px 0; color: #374151; font-size: 0.95rem; }
       .participants { margin-top: 8px; }
       .participants strong { display:block; margin-bottom:6px; color:#0f172a; }
-      .participants-list { list-style: disc; margin: 0 0 0 18px; padding: 0; color:#263238; }
-      .participants-list li { margin: 2px 0; font-size:0.92rem; }
+      /* Hide default bullets and reset spacing so we can style list items cleanly */
+      .participants-list { list-style: none; margin: 0; padding: 0; color:#263238; }
+      .participants-list li { margin: 6px 0; font-size:0.92rem; display:flex; align-items:center; justify-content:space-between; gap:8px; }
       .participants-empty { color: #6b7280; font-style: italic; font-size:0.9rem; }
       .availability { font-weight:600; color:#0b74de; }
+      .delete-btn { background: transparent; border: 0; color: #ef4444; cursor: pointer; font-size: 0.95rem; padding: 4px 6px; border-radius:4px; }
+      .delete-btn:hover { background: rgba(239,68,68,0.08); }
     `;
     const style = document.createElement("style");
     style.id = "activity-card-styles";
@@ -41,6 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // Clear loading message
       activitiesList.innerHTML = "";
 
+      // Reset select options (keep placeholder)
+      activitySelect.innerHTML = `<option value="">-- Select an activity --</option>`;
+
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
@@ -48,9 +54,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
-        // Build participants markup (bulleted list). Show friendly message if empty.
+        // Build participants markup (no bullets). Add delete button next to each participant.
         const participantsHtml = (details.participants && details.participants.length > 0)
-          ? `<ul class="participants-list">${details.participants.map(p => `<li>${p}</li>`).join("")}</ul>`
+          ? `<ul class="participants-list">${details.participants.map(p => `<li data-email="${p}"><span class="participant-email">${p}</span><button class="delete-btn" data-activity="${name}" data-email="${p}" title="Unregister">✖</button></li>`).join("")}</ul>`
           : `<div class="participants-empty">No participants yet — be the first!</div>`;
 
         activityCard.innerHTML = `
@@ -65,6 +71,30 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
         activitiesList.appendChild(activityCard);
+
+        // Attach delete handlers for the participant buttons inside this card
+        const deleteButtons = activityCard.querySelectorAll(".delete-btn");
+        deleteButtons.forEach(btn => {
+          btn.addEventListener("click", async (e) => {
+            const activityName = btn.getAttribute("data-activity");
+            const email = btn.getAttribute("data-email");
+
+            try {
+              const resp = await fetch(`/activities/${encodeURIComponent(activityName)}/participants?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+              const resJson = await resp.json();
+              if (resp.ok) {
+                // Refresh activities list to update participants and availability
+                fetchActivities();
+              } else {
+                console.error("Failed to unregister:", resJson);
+                alert(resJson.detail || "Failed to remove participant");
+              }
+            } catch (err) {
+              console.error("Error removing participant:", err);
+              alert("Failed to remove participant. Please try again.");
+            }
+          });
+        });
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -99,6 +129,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities list so the new participant shows immediately
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
